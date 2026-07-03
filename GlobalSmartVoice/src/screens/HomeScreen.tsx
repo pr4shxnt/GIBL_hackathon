@@ -1,13 +1,26 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../hooks/useAppContext';
 import { HISTORY_ROWS } from '../constants/data';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { logoutUser } from '../store/authSlice';
 
 export default function HomeScreen() {
   const { theme, masked, toggleMask, toggleTheme, isDark, openVoice, setTab, cardBlocked } = useApp();
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((s) => s.auth.user);
 
   const balance = masked ? '• • • • • •' : 'Rs. 84,560.84';
+  const firstName = user?.name?.trim().split(/\s+/)[0] || 'there';
+  const avatarInitial = (user?.name?.trim()[0] || '?').toUpperCase();
+
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Log Out', style: 'destructive', onPress: () => dispatch(logoutUser()) },
+    ]);
+  };
 
   const tiles = [
     { id: 'mt', label: 'Mobile\nTopup', icon: 'phone-portrait-outline', color: theme.tile },
@@ -22,9 +35,9 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={[styles.avatar, { backgroundColor: theme.cta }]}>
-            <Text style={[styles.avatarText, { color: theme.ctaInk }]}>P</Text>
+            <Text style={[styles.avatarText, { color: theme.ctaInk }]}>{avatarInitial}</Text>
           </View>
-          <Text style={[styles.greeting, { color: theme.ink }]}>Hi, Prashant!</Text>
+          <Text style={[styles.greeting, { color: theme.ink }]}>Hi, {firstName}!</Text>
           <View style={styles.headerIcons}>
             <TouchableOpacity onPress={toggleTheme}>
               <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={21} color={theme.ink} />
@@ -33,6 +46,9 @@ export default function HomeScreen() {
             <Ionicons name="notifications-outline" size={21} color={theme.ink} />
             <TouchableOpacity onPress={toggleMask}>
               <Ionicons name={masked ? 'eye-outline' : 'eye-off-outline'} size={21} color={theme.ink} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={21} color={theme.ink} />
             </TouchableOpacity>
           </View>
         </View>
