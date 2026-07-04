@@ -96,9 +96,3 @@ __pycache__/
 *.pyd
 *.so
 .Python
-
-# ── Piper TTS voice models (large binaries, downloaded on first run) ─────────
-agent-server/voices/
-raw/backend/voices/
-*.onnx
-*.onnx.json
