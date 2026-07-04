@@ -13,8 +13,8 @@ import sys
 import requests
 
 from config import (
-    OLLAMA_HOST, MODEL_NAME, REQUEST_TIMEOUT_SEC, INTENTS, INTENTS_Description,
-    ENTITY_TYPES, AMOUNT_WORDS, _NUM_WORD_TO_DIGIT,
+    OLLAMA_HOST, MODEL_NAME, FASTER_MODEL_NAME, REQUEST_TIMEOUT_SEC, INTENTS,
+    INTENTS_Description, ENTITY_TYPES, AMOUNT_WORDS, _NUM_WORD_TO_DIGIT,
 )
 
 INTENT_DESCRIPTIONS = "\n".join(
@@ -250,7 +250,51 @@ def _postprocess_slots(text: str, intent: str, slots: dict) -> dict:
     return slots
 
 
+def detect_language(text: str) -> str:
+    """
+    Detect the language of the utterance using the base model.
+    Capped at 5 tokens to ensure near-zero latency.
+    """
+    prompt = (
+        "Classify the language of this user banking utterance into exactly one of these words: "
+        "'english', 'nepali', 'nepglish'.\n"
+        "Rules:\n"
+        "- If the text is entirely in English, reply only with 'english'.\n"
+        "- If the text is entirely in Nepali (Devanagari or Romanized), reply only with 'nepali'.\n"
+        "- If it is a mix of English and Nepali words (code-switched), reply only with 'nepglish'.\n"
+        "Do not include punctuation, markdown formatting, or any explanation.\n\n"
+        f"Utterance: {text}\n"
+        "Language:"
+    )
+    payload = {
+        "model": MODEL_NAME,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "options": {
+            "temperature": 0.0,
+            "num_predict": 5
+        }
+    }
+    try:
+        resp = requests.post(f"{OLLAMA_HOST}/api/chat", json=payload, timeout=5)
+        resp.raise_for_status()
+        raw = resp.json().get("message", {}).get("content", "").strip().lower()
+        raw = re.sub(r"[^a-z]", "", raw)
+        if raw in ("english", "nepali", "nepglish"):
+            return raw
+    except Exception as e:
+        # Fallback to nepglish if request failed
+        pass
+    return "nepglish"
+
+
 def classify(text: str, history: list = None) -> dict:
+    # 1. Detect language first (fast low-token query to gemma4:e2b)
+    language = detect_language(text)
+
+    # 2. Select model based on detected language
+    model_to_use = FASTER_MODEL_NAME if language == "english" else MODEL_NAME
+
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
     if history:
         for msg in history:
@@ -261,12 +305,15 @@ def classify(text: str, history: list = None) -> dict:
     msgs.append({"role": "user", "content": text})
 
     payload = {
-        "model": MODEL_NAME,
+        "model": model_to_use,
         "messages": msgs,
         "stream": False,
         "think": False,          # <-- disables thinking/reasoning mode
         "format": "json",
-        "options": {"temperature": 0.1},
+        "options": {
+            "temperature": 0.1,
+            "num_predict": 128   # Cap response length to speed up generation
+        },
     }
     try:
         resp = requests.post(f"{OLLAMA_HOST}/api/chat", json=payload, timeout=REQUEST_TIMEOUT_SEC)
@@ -275,7 +322,7 @@ def classify(text: str, history: list = None) -> dict:
         return {"error": f"Cannot reach Ollama at {OLLAMA_HOST}. Is `ollama serve` running?"}
     except requests.exceptions.ReadTimeout:
         return {"error": f"Ollama took longer than {REQUEST_TIMEOUT_SEC}s to respond. "
-                          f"Try `ollama run {MODEL_NAME}` once in another terminal first "
+                          f"Try `ollama run {model_to_use}` once in another terminal first "
                           f"(warms the model into memory), or raise SAHAYAK_TIMEOUT."}
     except requests.exceptions.HTTPError:
         return {"error": f"Ollama HTTP error: {resp.text}"}
@@ -285,7 +332,7 @@ def classify(text: str, history: list = None) -> dict:
     if parsed is None:
         return {"error": "Model did not return valid JSON.", "raw_output": raw}
 
-    language = parsed.get("language", "english")
+    language = parsed.get("language", language)
     if language not in ("nepali", "english", "nepglish"):
         language = "english"
 

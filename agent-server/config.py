@@ -44,6 +44,7 @@ load_env_file()
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 MODEL_NAME = os.environ.get("SAHAYAK_MODEL", "gemma4:e2b")
+FASTER_MODEL_NAME = os.environ.get("FASTER_MODEL", "llama3.2:3b")
 REQUEST_TIMEOUT_SEC = int(os.environ.get("SAHAYAK_TIMEOUT", "180"))
 
 # Shared secret the App Layer (gibl-api) sends as X-Service-Key on /process.
