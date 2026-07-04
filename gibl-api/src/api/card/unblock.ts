@@ -1,12 +1,49 @@
 import type { Request, Response } from 'express';
+import bcrypt from 'bcrypt';
 import { requireAuth } from 'express-file-cluster/auth';
 import { User } from '../../model/User.js';
+import { redis } from '../../lib/redis.js';
+
+const LOG_TAG = '[card/unblock]';
+const isProd = process.env.NODE_ENV === 'production';
 
 export const middlewares = [requireAuth('user')];
 export const POST = async (req: Request, res: Response) => {
-  const user = await User.findById((req as any).user.id);
+  const authUser = (req as any).user;
+  const { otp } = req.body;
+  console.log(LOG_TAG, 'request received', { userId: authUser.id, otp: isProd ? '[redacted]' : otp });
+
+  const verifiedKey = `otp-verified:${authUser.id}`;
+  const alreadyVerified = await redis.get(verifiedKey);
+
+  if (alreadyVerified) {
+    await redis.del(verifiedKey);
+    console.log(LOG_TAG, 'accepted via prior /otp/verify flag', { verifiedKey });
+  } else {
+    if (!otp) {
+      console.log(LOG_TAG, 'rejected: missing otp and no prior verification flag', { verifiedKey });
+      return res.status(400).json({ error: 'otp is required (or call /otp/verify first)' });
+    }
+
+    const otpKey = `otp:${authUser.id}`;
+    const otpHash = await redis.get(otpKey);
+    if (!otpHash) {
+      console.log(LOG_TAG, 'rejected: no otp hash found in redis (expired or never requested)', { otpKey });
+      return res.status(400).json({ error: 'OTP expired or not requested.' });
+    }
+
+    const match = await bcrypt.compare(otp, otpHash);
+    console.log(LOG_TAG, 'otp comparison result', { userId: authUser.id, match });
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid OTP.' });
+    }
+    await redis.del(otpKey);
+  }
+
+  const user = await User.findById(authUser.id);
   if (user) {
     await User.update(user.id, { isCardBlocked: false });
+    console.log(LOG_TAG, 'card unblocked', { userId: user.id });
   }
   return res.json({ message: 'Card successfully unblocked.' });
 };
@@ -15,7 +52,8 @@ export const POST = async (req: Request, res: Response) => {
 import type { RouteMeta } from 'express-file-cluster';
 export const meta: RouteMeta = {
   POST: {
-    description: 'Restores functionality to a previously blocked debit/credit card for the authenticated user. Once unblocked, the card can be used for regular transactions immediately.',
+    description: 'Restores functionality to a previously blocked debit/credit card for the authenticated user. Requires OTP verification via the generic clientId-keyed OTP flow (not a transaction-scoped OTP) — either call /otp/verify first (its short-lived verified flag is consumed here automatically) or pass otp directly in this request. Once unblocked, the card can be used for regular transactions immediately.',
+    request: { body: { otp: '' } },
     response: { status: 200, body: { message: '' } }
   }
 };
