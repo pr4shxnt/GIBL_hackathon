@@ -10,6 +10,7 @@ Endpoints:
   GET    /v1/session/me         — Get current session info (auth required)
   POST   /v1/converse           — Send a message; receive agent reply (auth required)
   DELETE /v1/session/reset      — Reset conversation state (auth required)
+  POST   /process                — App Layer entry point (X-Service-Key + clientId; text+audio in one response)
 
 Run:
     source venv/bin/activate
@@ -28,6 +29,8 @@ from pydantic import BaseModel, EmailStr, Field
 
 from agent import build_graph, fresh_state
 from api_client import BankingAPIClient, APIError
+from config import DATA_LAYER_SERVICE_SECRET
+from tts import synthesize_wav_base64
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -78,6 +81,11 @@ class Session:
 
 sessions: dict[str, Session] = {}
 
+# Separate store for the /process (App Layer) flow: keyed by clientId itself
+# rather than an opaque session_token, since /process is called stateless-ly
+# per turn with just {text, clientId} — clientId doubles as the session key.
+service_sessions: dict[str, Session] = {}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Pydantic Schemas
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,6 +128,14 @@ class ConversationResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+class ProcessRequest(BaseModel):
+    text: str = Field(..., min_length=1, examples=["send 5000 to sunway ko bhai"])
+    clientId: str = Field(..., examples=["665f1a2b3c4d5e6f7a8b9c0d"])
+
+class ProcessResponse(BaseModel):
+    text: str
+    audio: str
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Auth Dependency
@@ -303,6 +319,74 @@ async def converse(
         history=result.get("messages") or None,
         awaiting_queue_confirm=result.get("awaiting_queue_confirm") or False,
     )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Routes — Process (App Layer entry point)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_service_session(client_id: str, service_key: str) -> Session:
+    """Get or create the per-clientId session for the /process flow."""
+    session = service_sessions.get(client_id)
+    if session is None:
+        client = BankingAPIClient()
+        client.authenticate_as_service(client_id, service_key)
+        session = Session(client=client)
+        service_sessions[client_id] = session
+    return session
+
+
+@app.post(
+    "/process",
+    response_model=ProcessResponse,
+    tags=["Process"],
+    summary="App Layer entry point — text in, reply text + spoken audio out",
+)
+async def process(
+    body: ProcessRequest,
+    x_service_key: str = Header(..., alias="X-Service-Key"),
+):
+    """
+    Single request/response entry point for the App Layer's /voice/converse.
+    Authenticates via the shared `X-Service-Key` secret (not a user login) and
+    trusts the given `clientId`, mirroring gibl-api's `requireServiceOrUser`
+    tool endpoints. Conversation state is kept per `clientId` across calls.
+
+    Returns the agent's reply text plus a base64-encoded WAV of it spoken.
+    """
+    if not DATA_LAYER_SERVICE_SECRET or x_service_key != DATA_LAYER_SERVICE_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Service-Key.")
+
+    user_text = body.text.strip()
+    if not user_text:
+        raise HTTPException(status_code=422, detail="text cannot be empty.")
+
+    session = _get_service_session(body.clientId, x_service_key)
+    session.last_active = datetime.utcnow()
+
+    turn_state = fresh_state(user_text, prev=session.agent_state)
+    turn_state["authenticated"] = True
+
+    try:
+        result = session.graph.invoke(turn_state)
+    except Exception as e:
+        logger.error(f"Agent error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Agent encountered an error: {e}")
+
+    session.agent_state = result
+    reply = result.get("response", "")
+
+    logger.info(
+        f"[process:{body.clientId}] intent={result.get('current_intent') or result.get('confirm_intent', '?')!r} "
+        f"phase={result.get('phase')} | '{user_text[:50]}' → '{reply[:60]}'"
+    )
+
+    try:
+        audio_b64 = synthesize_wav_base64(reply)
+    except Exception as e:
+        logger.error(f"TTS error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {e}")
+
+    return ProcessResponse(text=reply, audio=audio_b64)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes — Health

@@ -136,6 +136,21 @@ class BankingAPIClient:
         logger.info(f"Login successful. Account: {self.user_info.get('accountNumber')} | clientId: {self.user_id}")
         return self.user_info
 
+    def authenticate_as_service(self, client_id: str, service_key: str) -> None:
+        """
+        Authenticate as the App Layer's trusted Data Layer service, acting on
+        behalf of `client_id`, instead of logging in with a user's password.
+
+        Only works against gibl-api routes wired for `requireServiceOrUser`
+        (they trust `clientId` once `X-Service-Key` matches). Routes still on
+        plain `requireAuth('user')` will 401 under this mode since there's no
+        session cookie — call `login()` instead for those.
+        """
+        self.session.headers.update({"X-Service-Key": service_key})
+        self.user_id = client_id
+        self.is_authenticated = True
+        logger.info(f"Authenticated as service for clientId: {client_id}")
+
     def logout(self):
         """Clear session cookies and reset auth state."""
         try:
