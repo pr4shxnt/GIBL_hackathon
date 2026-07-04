@@ -1,0 +1,19 @@
+# Core server (server.py, agent.py, api_client.py)
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+langgraph>=0.0.55
+langchain-core>=0.1.52
+requests>=2.31.0
+scikit-learn>=1.4.0
+
+# pydantic's EmailStr (used by /v1/auth/register + /v1/auth/login) needs this
+# extra installed, or FastAPI fails at startup with:
+#   ImportError: email-validator is not installed
+pydantic[email]>=2.0.0
+
+# In-process TTS for POST /process (tts.py)
+piper-tts>=1.4.0
+
+# Benchmarking / NLU evaluation only (bench.py) — not required to run server.py
+pandas>=2.0.0
+tabulate>=0.9.0
