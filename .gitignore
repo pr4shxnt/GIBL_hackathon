@@ -1,3 +1,87 @@
+# ─────────────────────────────────────────────
+# Voice Banking Sahayak — .gitignore
+# ─────────────────────────────────────────────
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+wheels/
+*.whl
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environment
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment / secrets
+.env
+.env.*
+*.env
+!.env.example
+
+# Cookies / session files (may contain auth tokens)
+cookies.txt
+*.txt.bak
+
+# Logs
+*.log
+nlu_log.txt
+logs/
+
+# Benchmark / test outputs
+benchmark_results.csv
+*.csv.bak
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Coverage & testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+
+# mypy / pyright / ruff
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# Local scratch / experiments
+scratch/
+*.local.py
+
+# Dataset source files (large — track separately if needed)
+src/trackc_dataset_conversations/
+src/trackc_dataset_supporting/
+
 # ── React Native / Expo (GlobalSmartVoice) ───────────────────────────────────
 GlobalSmartVoice/node_modules/
 GlobalSmartVoice/.expo/
@@ -9,35 +93,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.pyo
+*.pyd
+*.so
 .Python
-*.egg
-*.egg-info/
-dist/
-build/
-.eggs/
-.env
-.venv
-env/
-venv/
-ENV/
-
-# ── Piper TTS – large binary voice models ────────────────────────────────────
-*.onnx
-*.onnx.json
-
-# ── Jupyter Notebooks ────────────────────────────────────────────────────────
-.ipynb_checkpoints/
-
-# ── OS / Editor ──────────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-desktop.ini
-.idea/
-.vscode/
-*.suo
-*.user
-
-# ── Logs & temp ──────────────────────────────────────────────────────────────
-*.log
-*.tmp
-*.bak
