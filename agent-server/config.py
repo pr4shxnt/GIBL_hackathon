@@ -5,6 +5,10 @@ import os
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 MODEL_NAME = os.environ.get("SAHAYAK_MODEL", "gemma4:e2b")
 REQUEST_TIMEOUT_SEC = int(os.environ.get("SAHAYAK_TIMEOUT", "180"))
+
+# Shared secret the App Layer (gibl-api) sends as X-Service-Key on /process.
+# Must match gibl-api's own DATA_LAYER_SERVICE_SECRET env var.
+DATA_LAYER_SERVICE_SECRET = os.environ.get("DATA_LAYER_SERVICE_SECRET", "")
 INTENTS = [
     "balance_inquiry",
     "card_block",
